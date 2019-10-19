@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: Secret
+data:
+  erlang-cookie: Yy1pcy1mb3ItY29va2llLXRoYXRzLWdvb2QtZW5vdWdoLWZvci1tZQ==
+metadata:
+  name: rabbitmq-config
+type: Opaque
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Expose the management HTTP port on each node
+  name: rabbitmq-management
+  labels:
+    app: rabbitmq
+spec:
+  ports:
+  - name: http
+    protocol: TCP
+    port: 15672
+    targetPort: 15672
+  selector:
+    app: rabbitmq
+  type: LoadBalancer # Or LoadBalancer in production w/ proper security
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # The required headless service for StatefulSets
+  name: rabbitmq
+  labels:
+    app: rabbitmq
+spec:
+  ports:
+  - port: 5672
+    protocol: TCP
+    targetPort: 5672
+    name: amqp
+  - port: 4369
+    protocol: TCP
+    name: epmd
+  - port: 25672
+    protocol: TCP
+    name: rabbitmq-dist
+  selector:
+    app: rabbitmq
+  type: LoadBalancer # Or LoadBalancer in production w/ proper security
+---
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+spec:
+  serviceName: "rabbitmq"
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      imagePullSecrets:
+      - name: regcred
+      containers:
+      - name: rabbitmq
+      #If you want to build your custm rabbitmq image, you may use the dockerfile attached
+        image: rabbitmq:3.8.0-management
+        imagePullPolicy: Always
+        env:
+        - name: RABBITMQ_ERLANG_COOKIE
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-config
+              key: erlang-cookie
+        - name: RABBITMQ_VM_MEMORY_HIGH_WATERMARK
+          value: "150MiB"
+        ports:
+        - containerPort: 5672
+        - containerPort: 15672
+        - containerPort: 25672

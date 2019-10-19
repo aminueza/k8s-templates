@@ -1,0 +1,101 @@
+---
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: postgresdb
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  hostPath:
+    path: "/var/lib/postgresql/data/pgdata"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app: postgres
+  name: postgres-pv-claim
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100M
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+    tier: backend
+spec:
+  selector:
+    app: postgres
+  sessionAffinity: None
+  ports:
+    - name: http
+      port: 5432
+      protocol: TCP
+      targetPort: 5432
+      nodePort: 31070
+  type: NodePort
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      #Change this with your dockerhub password
+      imagePullSecrets:
+        - name: regcred
+      containers:
+        - name: postgres
+          image: postgres:11.2
+          imagePullPolicy: Always
+          securityContext:
+            privileged: true
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  [
+                    "sh",
+                    "-c",
+                    "PGPASSWORD=postgres psql -U postgres -d postgrestest",
+                    "-c",
+                    'CREATE EXTENSION IF NOT EXISTS "id"',
+                  ]
+          ports:
+            - containerPort: 5432
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: POSTGRES_DB
+              value: "postgrestest"
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: PGUSER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              value: "postgres"
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgredb
+              readOnly: false
+      volumes:
+        - name: postgredb
+          persistentVolumeClaim:
+            claimName: postgres-pv-claim
